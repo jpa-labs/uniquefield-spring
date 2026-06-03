@@ -7,6 +7,7 @@ import jakarta.validation.ConstraintValidatorContext;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import org.springframework.beans.BeanWrapperImpl;
+import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -14,17 +15,41 @@ class AllExistsValidator implements ConstraintValidator<AllExists, Object> {
 
   @PersistenceContext private EntityManager entityManager;
 
+  private final ApplicationContext applicationContext;
+
   private Class<?> entityClass;
   private String attributePath;
   private boolean ignoreNullOrEmpty;
   private boolean ignoreCase;
   private String dtoField;
   private boolean typeLevel;
+  private boolean remote;
+  private Class<?> lookupType;
+  private AllExists allExistsAnnotation;
+
+  AllExistsValidator(ApplicationContext applicationContext) {
+    this.applicationContext = applicationContext;
+  }
 
   @Override
   public void initialize(AllExists constraintAnnotation) {
+    this.allExistsAnnotation = constraintAnnotation;
+    this.lookupType = constraintAnnotation.lookup();
+    this.remote = lookupType != void.class;
     this.entityClass = constraintAnnotation.entity();
-    UniqueConstraintPathSecurity.assertJpaEntityClass(this.entityClass);
+    if (remote) {
+      if (!RemoteAllExistsLookup.class.isAssignableFrom(lookupType)) {
+        throw new IllegalArgumentException(
+            "AllExists.lookup() must be assignable to RemoteAllExistsLookup: "
+                + lookupType.getName());
+      }
+      if (entityClass.isPrimitive() || entityClass.isArray()) {
+        throw new IllegalArgumentException(
+            "entity must be a non-array reference type when using lookup: " + entityClass);
+      }
+    } else {
+      UniqueConstraintPathSecurity.assertJpaEntityClass(this.entityClass);
+    }
     this.attributePath = constraintAnnotation.column();
     this.ignoreNullOrEmpty = constraintAnnotation.ignoreNullOrEmpty();
     this.ignoreCase = constraintAnnotation.ignoreCase();
@@ -54,6 +79,14 @@ class AllExistsValidator implements ConstraintValidator<AllExists, Object> {
     Set<Object> normalized = normalizeValues(iterable);
     if (normalized.isEmpty()) {
       return true;
+    }
+    if (remote) {
+      RemoteAllExistsLookup lookup =
+          applicationContext.getBean(lookupType.asSubclass(RemoteAllExistsLookup.class));
+      if (lookup.allExist(normalized, allExistsAnnotation)) {
+        return true;
+      }
+      return fail(context);
     }
     long matched =
         JpaUniqueConstraintSupport.countRowsIn(

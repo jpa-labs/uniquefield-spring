@@ -3,6 +3,8 @@ package io.github.jpa_labs.jpafieldconstraints.apt;
 import io.github.jpa_labs.jpafieldconstraints.UniqueConstraintStaticRules;
 import io.github.jpa_labs.jpafieldconstraints.AllExists;
 import io.github.jpa_labs.jpafieldconstraints.Exists;
+import io.github.jpa_labs.jpafieldconstraints.RemoteAllExistsLookup;
+import io.github.jpa_labs.jpafieldconstraints.RemoteExistsLookup;
 import io.github.jpa_labs.jpafieldconstraints.UniqueField;
 import io.github.jpa_labs.jpafieldconstraints.UniqueFields;
 import java.util.List;
@@ -337,7 +339,16 @@ public class UniqueConstraintAnnotationProcessor extends AbstractProcessor {
 
   private void validateExistsMirror(AnnotationMirror am, Element element) {
     ParsedExists p = parseExistsMirror(am);
-    if (!assertJpaEntity(p.entityType, element, "")) {
+    boolean remote = isNonVoidLookup(p.lookupType);
+    if (remote) {
+      if (!assertReferenceEntityWhenLookup(p.entityType, element)) {
+        return;
+      }
+      if (!assertSubtype(
+          p.lookupType, RemoteExistsLookup.class.getCanonicalName(), element, "lookup")) {
+        return;
+      }
+    } else if (!assertJpaEntity(p.entityType, element, "")) {
       return;
     }
     try {
@@ -388,7 +399,16 @@ public class UniqueConstraintAnnotationProcessor extends AbstractProcessor {
 
   private void validateAllExistsMirror(AnnotationMirror am, Element element) {
     ParsedAllExists p = parseAllExistsMirror(am);
-    if (!assertJpaEntity(p.entityType, element, "")) {
+    boolean remote = isNonVoidLookup(p.lookupType);
+    if (remote) {
+      if (!assertReferenceEntityWhenLookup(p.entityType, element)) {
+        return;
+      }
+      if (!assertSubtype(
+          p.lookupType, RemoteAllExistsLookup.class.getCanonicalName(), element, "lookup")) {
+        return;
+      }
+    } else if (!assertJpaEntity(p.entityType, element, "")) {
       return;
     }
     try {
@@ -435,6 +455,51 @@ public class UniqueConstraintAnnotationProcessor extends AbstractProcessor {
 
     printError(
         element, "@AllExists is not supported on " + element.getKind() + " (unsupported placement)");
+  }
+
+  private static boolean isNonVoidLookup(TypeMirror tm) {
+    if (tm == null || tm.getKind() == TypeKind.ERROR) {
+      return false;
+    }
+    if (tm.getKind() == TypeKind.VOID) {
+      return false;
+    }
+    if (tm instanceof DeclaredType dt) {
+      Element el = dt.asElement();
+      if (el instanceof TypeElement te
+          && "java.lang.Void".contentEquals(te.getQualifiedName().toString())) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private boolean assertReferenceEntityWhenLookup(TypeMirror entityType, Element reportOn) {
+    if (entityType == null || entityType.getKind() == TypeKind.ERROR) {
+      printError(reportOn, "entity type is invalid");
+      return false;
+    }
+    if (entityType.getKind().isPrimitive()) {
+      printError(reportOn, "entity must not be a primitive type when using lookup");
+      return false;
+    }
+    return true;
+  }
+
+  private boolean assertSubtype(
+      TypeMirror beanType, String interfaceFqn, Element reportOn, String label) {
+    TypeElement iface = processingEnv.getElementUtils().getTypeElement(interfaceFqn);
+    if (iface == null) {
+      printError(reportOn, "internal error: " + interfaceFqn + " not on classpath");
+      return false;
+    }
+    if (!processingEnv.getTypeUtils().isSubtype(beanType, iface.asType())) {
+      printError(
+          reportOn,
+          label + " must be assignable to " + interfaceFqn + ": " + beanType);
+      return false;
+    }
+    return true;
   }
 
   private boolean assertJpaEntity(TypeMirror entityType, Element reportOn, String prefix) {
@@ -523,6 +588,11 @@ public class UniqueConstraintAnnotationProcessor extends AbstractProcessor {
         case "column" -> p.column = v instanceof String s ? s : null;
         case "dtoField" -> p.dtoField = v instanceof String s ? s : null;
         case "where" -> p.whereClauses = parseExistsWhereClauses(v);
+        case "lookup" -> {
+          if (v instanceof TypeMirror tm) {
+            p.lookupType = tm;
+          }
+        }
         default -> {}
       }
     }
@@ -595,6 +665,11 @@ public class UniqueConstraintAnnotationProcessor extends AbstractProcessor {
         }
         case "column" -> p.column = v instanceof String s ? s : null;
         case "dtoField" -> p.dtoField = v instanceof String s ? s : null;
+        case "lookup" -> {
+          if (v instanceof TypeMirror tm) {
+            p.lookupType = tm;
+          }
+        }
         default -> {}
       }
     }
@@ -615,6 +690,7 @@ public class UniqueConstraintAnnotationProcessor extends AbstractProcessor {
 
   private static final class ParsedExists {
     TypeMirror entityType;
+    TypeMirror lookupType;
     String column;
     String dtoField;
     List<ParsedExistsWhere> whereClauses = List.of();
@@ -628,6 +704,7 @@ public class UniqueConstraintAnnotationProcessor extends AbstractProcessor {
 
   private static final class ParsedAllExists {
     TypeMirror entityType;
+    TypeMirror lookupType;
     String column;
     String dtoField;
   }

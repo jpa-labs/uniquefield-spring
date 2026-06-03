@@ -10,8 +10,9 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Asserts that the annotated element's value already exists on {@link #entity()} for the given JPA
- * attribute {@link #column()} (entity property name, not database column name).
+ * Asserts that the annotated element's value already exists for the given {@link #column()} path:
+ * either via local JPA ({@link #entity()} when {@link #lookup()} is unset) or via a Spring bean
+ * implementing {@link RemoteExistsLookup} (for example calling an OpenFeign client).
  *
  * <p>Field, method, or parameter: leave {@link #dtoField()} blank; the validated value is the
  * property value. For type-level validation, set {@link #dtoField()} to a bean property path on
@@ -51,8 +52,22 @@ public @interface Exists {
    */
   Class<? extends Payload>[] payload() default {};
 
-  /** @return JPA entity class to query. */
+  /**
+   * JPA entity class to query when {@link #lookup()} is unset. When {@link #lookup()} is set, this
+   * value is not used for persistence but must still be a reference type (for example {@code
+   * Object.class}) and remains available to {@link RemoteExistsLookup} via this annotation.
+   *
+   * @return entity class for JPA mode, or a placeholder type for remote lookup mode
+   */
   Class<?> entity();
+
+  /**
+   * When not {@code void.class}, the validator resolves a Spring bean of this type (must
+   * implement {@link RemoteExistsLookup}) and delegates existence checks instead of using JPA.
+   *
+   * @return {@code void.class} for local {@link #entity()} queries, or a lookup bean type
+   */
+  Class<?> lookup() default void.class;
 
   /**
    * Name of the entity attribute (JavaBean property), e.g. {@code "id"} or {@code

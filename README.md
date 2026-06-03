@@ -5,7 +5,7 @@
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.x%20%7C%204.0.x-6DB33F)
 ![Java](https://img.shields.io/badge/Java-17-007396)
 
-Jakarta Bean Validation constraints for **JPA-backed field checks** on DTOs: `@UniqueField`, `@UniqueFields`, `@Exists`, and `@AllExists` for Spring Boot with Hibernate / JPA.
+Jakarta Bean Validation constraints for **JPA-backed field checks** on DTOs: `@UniqueField`, `@UniqueFields`, `@Exists`, and `@AllExists` for Spring Boot with Hibernate / JPA. `@Exists` / `@AllExists` can also delegate to a **Spring bean** (`lookup`) for remote checks (for example OpenFeign and HTTP `HEAD`).
 
 - **Java 17**, tested against Spring Boot **3.5.x** and **4.0.x**.
 - **Runtime**: validators are Spring beans (EntityManager is injected); auto-configuration registers them.
@@ -131,6 +131,48 @@ public class AssignRolesRequest {
 ```
 
 `@AllExists` supports field/method/parameter placement (on iterable values) and type-level placement via `dtoField`.
+
+### Remote existence (OpenFeign / HTTP)
+
+When data is owned by **another service**, set **`lookup`** on `@Exists` or `@AllExists` to a Spring bean type that implements **`RemoteExistsLookup`** or **`RemoteAllExistsLookup`**. The validator resolves that bean from the application context and does **not** query the local database.
+
+- Use a reference type for **`entity`** when you only use `lookup`, for example **`Object.class`**, as a placeholder (`column` and `where` are still on the annotation for your code to read).
+- A typical HTTP pattern is **`HEAD`** against the resource URL: **2xx** ⇒ exists, **404** ⇒ missing. If your Feign configuration turns non-2xx into **`FeignException`**, catch it and map **404** to “not found”.
+
+```java
+// Feign client (HEAD avoids a response body)
+public interface TenantClient {
+  @RequestLine("HEAD /tenants/{id}")
+  feign.Response headTenant(@Param("id") String id);
+}
+
+@Component
+public class TenantExistsLookup implements RemoteExistsLookup {
+  private final TenantClient tenants;
+
+  public TenantExistsLookup(TenantClient tenants) {
+    this.tenants = tenants;
+  }
+
+  @Override
+  public boolean exists(Object value, Exists constraint) {
+    try (feign.Response r = tenants.headTenant(value.toString())) {
+      int s = r.status();
+      return s >= 200 && s < 300;
+    } catch (feign.FeignException e) {
+      if (e.status() == 404) return false;
+      throw e;
+    }
+  }
+}
+
+public class CreateOrderRequest {
+  @Exists(lookup = TenantExistsLookup.class, entity = Object.class, column = "tenantId")
+  private UUID tenantId;
+}
+```
+
+For **`@AllExists`**, implement **`RemoteAllExistsLookup#allExist(Set, AllExists)`** (for example one `HEAD` per id, or a batch API if the remote service provides one).
 
 ## Build & test
 

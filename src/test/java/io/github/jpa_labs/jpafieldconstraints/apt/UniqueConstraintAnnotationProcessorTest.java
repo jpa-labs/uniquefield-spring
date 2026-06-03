@@ -329,6 +329,78 @@ class UniqueConstraintAnnotationProcessorTest {
   }
 
   @Test
+  void passesWhenExistsUsesRemoteLookupWithPlainEntityType() {
+    Compilation compilation =
+        javac()
+            .withClasspathFrom(UniqueConstraintAnnotationProcessorTest.class.getClassLoader())
+            .withProcessors(new UniqueConstraintAnnotationProcessor())
+            .compile(
+                JavaFileObjects.forSourceString(
+                    "io.github.jpa_labs.jpafieldconstraints.ProcessorGenRemoteExistsOk",
+                    """
+                    package io.github.jpa_labs.jpafieldconstraints;
+                    public class ProcessorGenRemoteExistsOk {
+                      static final class L implements RemoteExistsLookup {
+                        public boolean exists(Object value, Exists constraint) {
+                          return true;
+                        }
+                      }
+                      @Exists(entity=java.lang.Object.class, column="id", lookup=L.class)
+                      private String code;
+                    }
+                    """));
+    assertThat(compilation).succeeded();
+  }
+
+  @Test
+  void failsWhenExistsLookupIsNotRemoteExistsLookup() {
+    Compilation compilation =
+        javac()
+            .withClasspathFrom(UniqueConstraintAnnotationProcessorTest.class.getClassLoader())
+            .withProcessors(new UniqueConstraintAnnotationProcessor())
+            .compile(
+                JavaFileObjects.forSourceString(
+                    "io.github.jpa_labs.jpafieldconstraints.ProcessorGenRemoteExistsBadLookup",
+                    """
+                    package io.github.jpa_labs.jpafieldconstraints;
+                    class BadRunnable implements java.lang.Runnable {
+                      public void run() {}
+                    }
+                    public class ProcessorGenRemoteExistsBadLookup {
+                      @Exists(entity=java.lang.Object.class, column="id", lookup=BadRunnable.class)
+                      private String code;
+                    }
+                    """));
+    assertThat(compilation).failed();
+    assertThat(compilation).hadErrorContaining("RemoteExistsLookup");
+  }
+
+  @Test
+  void passesWhenAllExistsUsesRemoteLookupWithPlainEntityType() {
+    Compilation compilation =
+        javac()
+            .withClasspathFrom(UniqueConstraintAnnotationProcessorTest.class.getClassLoader())
+            .withProcessors(new UniqueConstraintAnnotationProcessor())
+            .compile(
+                JavaFileObjects.forSourceString(
+                    "io.github.jpa_labs.jpafieldconstraints.ProcessorGenRemoteAllExistsOk",
+                    """
+                    package io.github.jpa_labs.jpafieldconstraints;
+                    import java.util.List;
+                    public class ProcessorGenRemoteAllExistsOk {
+                      static final class L implements RemoteAllExistsLookup {
+                        public boolean allExist(java.util.Set<Object> values, AllExists constraint) {
+                          return true;
+                        }
+                      }
+                      @AllExists(entity=java.lang.Object.class, column="id", lookup=L.class)
+                      private List<String> codes;
+                    }
+                    """));
+    assertThat(compilation).succeeded();
+  }
+
+  @Test
   void failsWhenUniqueFieldsHasInvalidColumnShape() {
     Compilation compilation =
         javac()

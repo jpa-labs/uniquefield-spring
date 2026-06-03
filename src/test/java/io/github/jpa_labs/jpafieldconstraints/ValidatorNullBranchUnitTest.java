@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 
 import jakarta.validation.ConstraintValidatorContext;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationContext;
 
 class ValidatorNullBranchUnitTest {
 
@@ -22,7 +23,7 @@ class ValidatorNullBranchUnitTest {
   @Test
   void existsTypeLevelReturnsTrueForNullRootDto() {
     Exists annotation = ExistsTypeLevelDto.class.getAnnotation(Exists.class);
-    ExistsValidator validator = new ExistsValidator();
+    ExistsValidator validator = new ExistsValidator(mock(ApplicationContext.class));
     validator.initialize(annotation);
 
     boolean valid = validator.isValid(null, mock(ConstraintValidatorContext.class));
@@ -33,7 +34,7 @@ class ValidatorNullBranchUnitTest {
   @Test
   void allExistsTypeLevelReturnsTrueForNullRootDto() {
     AllExists annotation = AllExistsTypeLevelDto.class.getAnnotation(AllExists.class);
-    AllExistsValidator validator = new AllExistsValidator();
+    AllExistsValidator validator = new AllExistsValidator(mock(ApplicationContext.class));
     validator.initialize(annotation);
 
     boolean valid = validator.isValid(null, mock(ConstraintValidatorContext.class));

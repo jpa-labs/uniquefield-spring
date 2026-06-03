@@ -10,8 +10,9 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Asserts that every value in the annotated iterable exists on {@link #entity()} for {@link
- * #column()}.
+ * Asserts that every value in the annotated iterable exists for {@link #column()}: locally via JPA
+ * ({@link #entity()} when {@link #lookup()} is unset) or via {@link RemoteAllExistsLookup} (for
+ * example batch checks through OpenFeign).
  *
  * <p>Field, method, or parameter: leave {@link #dtoField()} blank and annotate an iterable value.
  * For type-level validation, set {@link #dtoField()} to a DTO property path that resolves to an
@@ -51,8 +52,21 @@ public @interface AllExists {
    */
   Class<? extends Payload>[] payload() default {};
 
-  /** @return JPA entity class to query. */
+  /**
+   * JPA entity class to query when {@link #lookup()} is unset. When {@link #lookup()} is set, not
+   * used for persistence; use a reference placeholder such as {@code Object.class}.
+   *
+   * @return entity class for JPA mode, or a placeholder for remote lookup mode
+   */
   Class<?> entity();
+
+  /**
+   * When not {@code void.class}, resolves a Spring bean of this type (must implement {@link
+   * RemoteAllExistsLookup}) instead of querying JPA.
+   *
+   * @return {@code void.class} for local queries, or a lookup bean type
+   */
+  Class<?> lookup() default void.class;
 
   /** @return Name of the entity attribute (JavaBean property). */
   String column();
